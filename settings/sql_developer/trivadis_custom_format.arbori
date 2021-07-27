@@ -529,9 +529,9 @@ simpleIndentConditions:
 | [node) identifier & [node^) create_materialized_view[33,79)
 | [node) identifier & [node^) create_materialized_view[53,77)
 | [node) identity_clause
-| [node) index_properties & [node^) table_index_clause
+| [node) index_properties & [node^) table_index_clause -- Puts index properties (e,g. PCTFREE) on own line and indents.
 | [node) index_subpartition_clause[69,119)# 
-| [node) inline_constraint & ![node) inline_constraint[14,67)
+--| [node) inline_constraint & ![node) inline_constraint[14,67) -- stop "not null" constraints being put on own line and indented.
 | [node) inline_ref_constraint
 | [node) insert & ![node^) sql_statement & ![node^) stmt                         -- insert without trailing semicolon
 | [node) insert_into_clause & ![node^) single_table_insert & ![node^) multi_table_insert[12,24)#
@@ -636,7 +636,8 @@ simpleIndentConditions:
 | [node) query_block  & [node^) merge[47,60)                
 | [node) subquery  & [node-1) insert_into_clause
 | [node) system_privilege 
-| [node) table_index_clause 
+| [node) table_index_clause -- Puts in line break and indents the table name after "ON" keyword.
+| [node) constraint_clauses 
 | [node) table_partitioning_clauses
 | [node) table_properties  & ![node) column_properties          --?or relational_table  extra ident for ++1222  
                                                                 -- &! [node) nested_table_col_properties
@@ -669,6 +670,7 @@ simpleIndentConditions:
 | [node) xml_passing_clause                                                      -- salvisberg, added, issue #62
 | [node) xmlquery[17,31)                                                         -- salvisberg, added, issue #62
 ;
+-- -> { print("output="+ tuple); target.root.printTree(); }
 
 /**
  * More elaborate condition on parse nodes to be indented.
@@ -681,7 +683,8 @@ ancestor < node & ![node^) "(x,y,z)" & [node) column  & (
    [ancestor) attribute_clause                  & ![node^) compound_expression
  | [ancestor) dimension_join_clause             & ![node^) compound_expression
  | [ancestor) extended_attribute_clause         & ![node^) compound_expression
- | [ancestor) table_index_clause                & ![node^) compound_expression
+ | [ancestor) table_index_clause                & ![node^) compound_expression    -- Moves first column name on to own line and indent double the amount specified. Moves closing ')' to own line and indents once.
+ | [ancestor) constraint_clauses                & ![node^) compound_expression
  | [ancestor) range_partitions 
  | [ancestor) range_values_clause 
 );
@@ -700,7 +703,6 @@ mergeStatementNodes:
   | [node) where_clause & [node^) merge_insert_clause
 ;
 
-
 indentedNodes1: 
     simpleIndentConditions 
   | closestAncestorDescendent 
@@ -713,6 +715,7 @@ indentedNodes1:
  * This is the same set of nodes as indentedNodes1
  * This duplicate relation is warranted for second callback 
 **/ 
+
 indentedNodes2: indentedNodes1
 ->
 ;
@@ -803,7 +806,7 @@ _skipWSAfterNode:
   | [node) '{'
   | [node) '}'
   | [node) '^'
-  | !:spaceAroundOperators & [node) '-'
+  |!:spaceAroundOperators & [node) '-'
   | [node) '-'  & [node) unary_add_op
   | !:spaceAroundOperators & [node) '|'
   | [node+1) '|'           & [node) '|'
@@ -858,8 +861,6 @@ skipWhiteSpaceAfterNode:
   _skipWSAfterNode | _skipWSAfterAncNode
 ->
 ;
-
-
 
 "analytics":
     [identifier) identifier 
@@ -953,6 +954,9 @@ _extraBrkBefore:
 | [node) XML_table_column & [node-1) ',' & :breaksAfterComma  -- salvisberg, added, issue #57
 | [node+1) XML_table_column & [node) ',' & :breaksBeforeComma -- salvisberg, added, issue #57
 | [node) ')' & [node-4) 'XMLTABLE'                            -- salvisberg, added, issue #57
+| [node) table_compression & [node-1) segment_attributes_clause
+| [node) logging_clause & [node-1) segment_attributes_clause
+| [node) 'TABLESPACE' -- Cannot identify the previous node type, combination of physical_properties and segment_attributes_clause?
 ;
 
 _extraBrkAfter: 
@@ -1148,6 +1152,7 @@ rightAlignments: :alignRight & (
 ) ->  
 ;
 
+
 -- salvisberg: added to fix issue #68, same logic as in rightAlignments callback but with shorter "merge" keyword
 rightAlignmentsMerge: 
   :alignRight & (
@@ -1168,6 +1173,7 @@ rightAlignmentsMerge:
     }
   }
 
+
 /**
  * All alignments (paddings)
  * This is binary relation: we want all grammar symbols matched by their scope.
@@ -1180,8 +1186,7 @@ rightAlignmentsMerge:
  * When parse tree nodes are represented as nested intervals, this condition informally stipulates that ancestor's 
  * (i.e. "scope") Date Of Birth precedes that of descendant ("id").
 **/
-_paddedIdsInScope1: (
--- types
+_paddedIdsInScope1: ( -- types
   :alignTypeDecl & [id) identifier & [id+1) datatype & [scope) relational_properties
 | :alignTypeDecl & ( :breaksAfterComma | :breaksBeforeComma ) & [id) decl_id & ([id+1) prm_spec_unconstrained_type | [id+1) mode /*30067569:*/| [id+1) 'OUT' | [id+1) 'IN' ) & [scope) fml_part 
 | :alignTypeDecl & ( :breaksAfterComma | :breaksBeforeComma ) & [id) decl_id & ([id+1) constrained_type | [id+1) object_d_rhs) & [scope) adt_definition
@@ -1229,8 +1234,8 @@ _paddedIdsInScopeXmlTableColumnDatatype:    -- salvisberg, added, issue #57
 ;
 
 paddedIdsInScope: 
-  _paddedIdsInScope1 
-| _paddedIdsInScope2 
+ _paddedIdsInScope1 
+|_paddedIdsInScope2 
 | _paddedIdsInScopeXmlTableColumn           -- salvisberg, added, issue #57
 | _paddedIdsInScopeXmlTableColumnDatatype   -- salvisberg, added, issue #57
 ->
@@ -1251,6 +1256,7 @@ WITH apms_xml AS ( SELECT
            -- adjusted ^
 ... 
  */
+
 incrementalAlignments:  [node) subquery
                      |  [node) JSON_OBJECT
                      |  [node) case_expression     -- salvisberg: added to support case expression as first item in select_list
@@ -1282,7 +1288,7 @@ pairwiseAlignments1: predecessor = node-1 & (
   | [predecessor) column                          & [node) merge_insert_clause[26,33) 
   | [predecessor) "expr_list_def"[16,34)          & [node) ',' 
   --| [predecessor) "expr_list"                     & [node) ',' -- leading commas -- salvisberg: disabled (#76)
-  | [predecessor) column                          & [node) "expr_list_def"[16,34) 
+  | [predecessor) ','                          & [node) "expr_list_def"[16,34) 
   | [predecessor) merge_update_clause[36,56)      & [node) ',' 
   | !:alignRight & [predecessor) condition        & [node) AND_OR 
   | [predecessor) expr                   & [node) compound_expression[25,44)
@@ -1456,7 +1462,7 @@ pairwiseAlignmentMergeUpdate:
   & predecessor = node-1-1-1
 ;
 
-pairwiseAlignments: 
+pairwiseAlignments:
   --  pairwiseAlignments00            -- salvisberg, disabled (#76)
   --| pairwiseAlignments0             -- salvisberg, disabled (#76)
     pairwiseAlignments1 
@@ -1483,7 +1489,6 @@ pairwiseAlignments:
 -> 
 ;
 
-
 less2Spaces:   :breaksBeforeComma & (
     [node+1) arg & [node) ',' 
   | [node+1) prm_spec & [node) ',' 
@@ -1500,16 +1505,17 @@ less2Spaces:   :breaksBeforeComma & (
   | [node+1) alias_in_out_constraints & [node) ','  
   --| [node+1) column & [node+2) '=' & [node) ',' -- salvisberg, disabled, issue #68 (redundant) 
   | [node+1) update_set_clause_expr & [node) ','  -- salvisberg, added, issue #64
-  | [node+1) column & [node) ','                  -- salvisberg, added, issue #68
+  | [node+1) column & [node) ',' & ![node^) table_index_clause[32,58) & ![node^^) table_index_clause[32,58) & ![node^) out_of_line_constraint[45,52) & ![node^) out_of_line_constraint[25,32) -- salvisberg, added, issue #68. Pete changed to stop removing a space in the index and constraint DDL before the comma and column name.
 ) -> {
     var node = tuple.get("node");       
     var nodeIndent = struct.getNewline(node.from);
     var offset = 2;
     if( !struct.getBoolBind("spaceAfterCommas") )
         offset = 1;
-    if( nodeIndent != null ) 
+    if( nodeIndent != null )
         struct.putNewline(node.from, nodeIndent.substr(0,nodeIndent.length-offset));
 }
+
 /* salvisberg, disabled (#74), leads to unwanted additional indentation
 extraIndent:
    [node) searched_case_expression# 
@@ -1556,6 +1562,7 @@ ignoreLineBreaksBeforeNode:
 |  [node) 'THEN' -- salvisberg: added to avoid line breaks before THEN (independent of length of previous condition)
 ->
 ;
+
 ignoreLineBreaksAfterNode:
    !:breaksAfterComma &    [node) ','
 |                          [node) 'PARTITION' &    [node+1) identifier
@@ -1565,7 +1572,6 @@ ignoreLineBreaksAfterNode:
 dontFormatNode: [node) numeric_literal
 ->
 ;
-
 
 timestamp: runOnce & false -> {
     var date = new java.util.Date();    
@@ -1596,9 +1602,9 @@ indentInExistsXmlTableScalarSubquery:
     | [node-1) subquery  & [node-2) '(' & [node)   ')' & [node^) in_condition
     | [node-1) subquery  & [node-2) '(' & [node)   ')' & [node^)  query_table_expression
   ) 
-  | [node)   expression_list & [node-1) '(' & [node+1) ')' & [node^^) in_condition
-  | [node-1) expression_list & [node-2) '(' & [node)   ')' & [node^^) in_condition
-  | [node-1) expression_list & [node-2) '(' & [node)   ')' & [node^) in_condition
+  | [node)   expression_list & [node-1) '(' & [node+1) ')' & [node^^) in_condition & ![node^^^) out_of_line_constraint[14,87)   -- Added out of line constraint check
+  | [node-1) expression_list & [node-2) '(' & [node)   ')' & [node^^) in_condition & ![node^^^) out_of_line_constraint[14,87)   -- to prevent over indentation
+  | [node-1) expression_list & [node-2) '(' & [node)   ')' & [node^) in_condition & ![node^^) out_of_line_constraint[14,87)     -- in out of line check constraint
   | :breaksBeforeComma & (
       [node) string & [node-2) 'XMLTABLE'
     | [node) XMLTABLE_options
@@ -1764,4 +1770,121 @@ keepLineBreakAfterSelectHint: runOnce -> {
         prevToken = tokens[i];
       }
     }
+  }
+
+/*
+Align column names for "CREATE TABLE" DDL, by padding 1 space
+to the right for the first column name.
+*/
+
+addSpaceToFirstTableColumn:
+    [node) column_definition & [node^) relational_properties -> {
+    padNode(tuple.get("node"), 1); 
+  }
+
+/*
+Some default is double indenting the first index column. This
+moves the first column to its own line and indents once when
+line breaks come before commas, lining up the column names.
+*/
+
+indexFirstColumnOneIndent:
+    :breaksBeforeComma & [node) index_expr & [node-1) '(' -> {
+    var node = tuple.get("node");
+    var indentSpaces = struct.options.get("identSpaces")
+    var indent="";
+    for (i=0; i< indentSpaces+1; i++) {
+        indent=indent+ " ";
+    }
+    struct.putNewline(node.from, "\n"+indent);
+  }
+
+
+/*
+Doing the same for the first constraint column name.
+*/
+
+constraintFirstColumnsIndent:
+    :breaksBeforeComma & [node) column &  [node^) out_of_line_constraint[14,87) -> {
+    var node = tuple.get("node");
+    var indentSpaces = struct.options.get("identSpaces")
+    var indent="";
+    for (i=0; i< indentSpaces+1; i++) {
+        indent=indent+ " ";
+    }
+    struct.putNewline(node.from, "\n"+indent);
+}
+
+/*
+Align column names used in constraint and index clauses by padding
+to the right by the number of indent spaces minus 1.
+
+Use this to align second and subsequent column names with the first column name
+when not using indexFirstColumnOneIndent and constraintColumnsIndent
+
+padToAlignIndexConstraintColumns:
+   [node+1) column & [node) ',' & 
+        ( [node^) table_index_clause[32,58) | [node^^) table_index_clause[32,58) | [node^) out_of_line_constraint[45,52) ) -> {
+    var node = tuple.get("node");       
+    var nodeIndent = struct.getNewline(node.from);
+    var indentSpaces = struct.options.get("identSpaces")
+    if( nodeIndent != null )
+        padNode(tuple.get("node"), indentSpaces-1);
+  }
+*/
+
+/*
+Align the line containing index attributes and constraint index clauses to the
+left margin.
+*/
+
+leftAlignIndexAttributes:
+    [node) index_attributes | [node) using_index_clause -> {
+    var node = tuple.get("node");       
+    var nodeIndent = struct.getNewline(node.from);
+    if( nodeIndent != null )
+        struct.putNewline(node.from, '\n');
+  }
+
+/*
+Align the 'ENABLE' keyword to the left margin when it is part of a constraint
+definition.
+*/
+
+leftAlignEnableConstraint:
+    ( [node) 'ENABLE' & [node^) constraint_state ) |
+        ( [node) 'ENABLE' & [node^) out_of_line_constraint ) -> {
+    var node = tuple.get("node");       
+    struct.putNewline(node.from, '\n');
+  }
+
+/*
+Put a new line after the 'ENABLE' that ends a 'CHECK' constraint.
+DBM_METADATA.GET_DDL produces the DDL all on one line with no
+blank lines in-between. This cannot put the new line after the
+terminating ';' as the ';' is not treated as a token.
+*/
+
+outOfLinecheckConstraintNewLine:
+    [node) out_of_line_constraint -> {
+    var parent=tuple.get("node");
+    var descendants = parent.descendants();
+    var anode="";
+    var content="";
+    var isCheckCons=false;
+
+    for (i = 0, len = descendants.length; i < len; i++) {
+        anode = descendants.get(i);
+        for (i=anode.from; i< anode.to; i++) {
+            content=target.src.get(i).content;
+            if (content == 'CHECK') {
+                isCheckCons=true;
+            }
+
+            if ( isCheckCons && content == 'ENABLE') {
+                struct.putNewline((anode.to),"\n");
+            }
+        }
+    }
+
   }
