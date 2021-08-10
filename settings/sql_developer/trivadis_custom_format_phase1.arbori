@@ -59,7 +59,11 @@ startCustomFormat:
 resetFormatter:
     runOnce
 -> {
+    /*  The comment above about SQLcl not caching the formatter is not true
+        as of release 21.2, so changed runningInSQLDev to return true.
+    */
     var runningInSQLDev = function() {
+        return true;
         if (struct.getClass().getSimpleName() == "CustomFormat") {
             logger.fine(struct.getClass(), "resetFormatter: running within SQLDev.");
             return true;
@@ -473,7 +477,10 @@ define_global_functions:
            "merge",
            "block_stmt",
            "pkg_body",
-           "create_plsql"
+           "create_plsql",
+           "create_table",
+           "create_index",
+           "alter_table"
         ]);
     }
 
