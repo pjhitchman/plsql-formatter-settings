@@ -50,7 +50,7 @@ var getFiles = function (rootPath, extensions) {
 
 var configure = function (formatter, xmlPath, arboriPath) {
     if (!"default".equals(xmlPath) && !"embedded".equals(xmlPath) && xmlPath != null) {
-        var url = new javaFile(xmlPath).toURI().toURL();
+        var url = new javaFile(xmlPath).toURL();
         var options = javaPersist2XML.read(url);
         var keySet = options.keySet().stream().collect(javaCollectors.toList());
         for (var j in keySet) {
@@ -178,6 +178,15 @@ var getJsPath = function () {
 }
 
 var getCdPath = function (path) {
+
+    // Deal with situtation where the path name starts with a double quote.
+    // When it is, the first quote is included in the path parameter.
+
+    if (path.startsWith("\"")) {
+        path=path.substring(1);
+    }
+
+        
     if (path.startsWith("/")) {
         return path; // Unix, fully qualified
     } else if (path.length > 1 && path.substring(1, 2) == ":") {
@@ -343,9 +352,45 @@ var processAndValidateArgs = function (args) {
         return result(false);
     }
     if (!extArgFound) {
-        extensions = [".sql", ".prc", ".fnc", ".pks", ".pkb", ".trg", ".vw", ".tps", ".tpb", ".tbp", ".plb", ".pls", ".rcv", ".spc", ".typ",
-            ".aqt", ".aqp", ".ctx", ".dbl", ".tab", ".dim", ".snp", ".con", ".collt", ".seq", ".syn", ".grt", ".sp", ".spb", ".sps", ".pck"];
+        extensions = [
+                        ".aqt"
+                       ,".aqp"
+                       ,".collt"
+                       ,".con"
+                       ,".ctx"
+                       ,".dbl"
+                       ,".dim"
+                       ,".fnc"
+                       ,".fun"
+                       ,".grt"
+                       ,".ind"
+                       ,".mvw"
+                       ,".prc"
+                       ,".pks"
+                       ,".pkb"
+                       ,".plb"
+                       ,".pls"
+                       ,".rcv"
+                       ,".sp"
+                       ,".spb"
+                       ,".seq"
+                       ,".snp"
+                       ,".spc"
+                       ,".sps"
+                       ,".syn"
+                       ,".tab"
+                       ,".tbp"
+                       ,".tpb"
+                       ,".tps"
+                       ,".trg"
+                       ,".typ"
+                       ,".pck"
+                       ,".pro"
+                       ,".sql"
+                       ,".vw"
+                     ];
     }
+
     if (!mextArgFound) {
         markdownExtensions = [".markdown", ".mdown", ".mkdn", ".md"];
     }
