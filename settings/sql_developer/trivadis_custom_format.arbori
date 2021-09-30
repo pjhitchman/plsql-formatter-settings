@@ -252,6 +252,9 @@ define_global_variables:
     // get option for "Whitespace: Around parenthesis"
     var spaceAroundBrackets = struct.options.get("spaceAroundBrackets");
 
+    // get option for "lineBreakString"
+    var lineBreakString = struct.options.get("lineBreakString");
+
     // lexer tokens including hidden tokens (LINE_COMMENT, COMMENT, WS, MACRO_SKIP, SQLPLUSLINECONTINUE_SKIP)
     // are relevant to find comments between tokens. These variables are populated in
     // keepSignificantWhitespaceBeforeLeafNodes
@@ -532,6 +535,10 @@ define_global_functions:
            "select",
            "create_view",
            "create_materialized_view",
+           "create_table",
+           "create_index",
+           "alter_table",
+           "comment",
            "insert",
            "update",
            "delete",
@@ -580,6 +587,42 @@ define_global_functions:
         }
         return result;
     }
+    
+    // Returns the line separator to use when outputing.
+
+    function lineSeparator() {
+        
+        /*
+            Validate the line break string:
+            If lineBreakString is not defined or contains 
+            arbitray characters fallback to the system default.
+            Allow either a carriage return followed by a
+            newline or just a newline.
+        */
+
+        var NL=System.lineSeparator();
+
+        if ( typeof lineSeparator.lineBreak == 'undefined' ) {
+
+            if ( !lineBreakString ) {
+
+                lineSeparator.lineBreak=NL;
+            }
+            else {
+                lineSeparator.lineBreak = lineBreakString.replace("\\r\\n",'\r\n').replace("\\n",'\n');
+
+            }
+
+            var regex = new RegExp('[^\r\n]+');
+
+            if ( regex.test(lineSeparator.lineBreak) ) {
+
+                    lineSeparator.lineBreak=NL;
+            }
+        } 
+
+        return ( lineSeparator.lineBreak );
+   }
 }
 
 -- --------------------------------------------------------------------------------------------------------------------
@@ -1164,7 +1207,7 @@ a5_no_space_before:
     var node = tuple.get("node");
     var content = target.src.get(node.from).content;
     if (content == '/') {
-        struct.putNewline(node.from, System.lineSeparator());
+        struct.putNewline(node.from, lineSeparator());
         logger.fine(struct.getClass(), "a5_no_space_before: <" + content + ">, add line break at " + node.from + ".");
     } else if (content != '.' || getIndent(node.from).indexOf("\n") == -1 || target.src.get(node.from+1).content == '.') {
         // support fluent type methods across multiple lines
@@ -1552,15 +1595,36 @@ a15_materialized_view_column_alias:
     & parent < node
 ;
 
+a15_table_column:
+      [parent) relational_properties
+    & [node) column_definition
+    & parent <= node
+;
+
+a15_index_column:
+      [parent) table_index_clause
+    & [node) index_expr
+    & parent < node
+;
+
+a15_constraint_column:
+      [parent) out_of_line_constraint[14,87)
+    & [node) column
+    & parent < node
+;
+
 a15_line_break_before:
       a15_various
     | a15_is_or_as
     | a15_view_column_alias
     | a15_materialized_view_column_alias
+    | a15_table_column
+    | a15_index_column
+    | a15_constraint_column
 -> {
     var node = tuple.get("node");
     if (getIndent(node.from).indexOf("\n") == -1) {
-        struct.putNewline(node.from, System.lineSeparator());
+        struct.putNewline(node.from, lineSeparator());
         var content = target.src.get(node.from).content;
         logger.fine(struct.getClass(), "a15_line_break_before: <" + content + "> at " + node.from + ".");
     }
@@ -1576,7 +1640,7 @@ a14_line_break_after:
 -> {
     var node = tuple.get("node");
     if (getIndent(node.to).indexOf("\n") == -1) {
-        struct.putNewline(node.to, System.lineSeparator());
+        struct.putNewline(node.to, lineSeparator());
         var content = target.src.get(node.from).content;
         logger.fine(struct.getClass(), "a14_line_break_after: <" + content + "> at " + node.to + ".");
     }
@@ -1711,7 +1775,7 @@ r3_commands:
     if (node.from > 0) {
         var indent = getIndent(node.from);
         if (indent.indexOf("\n") == -1) {
-            struct.putNewline(node.from, System.lineSeparator());
+            struct.putNewline(node.from, lineSeparator());
             logger.fine(struct.getClass(), "r3_commands: add line break at " + node.from + ".");
         } else {
             // remove existing indentation; enforce conformity in these cases
@@ -1824,7 +1888,7 @@ o6_line_break_before:
         var node = tuple.get("node");
         var indent = getIndent(node.from);
         if (indent.indexOf("\n") == -1) {
-            struct.putNewline(node.from, System.lineSeparator());
+            struct.putNewline(node.from, lineSeparator());
             logger.fine(struct.getClass(), "o6_line_break_before: at " + node.from + ".");
         }
     }
@@ -1839,7 +1903,7 @@ o6_line_break_after:
         var node = tuple.get("node");
         var indent = getIndent(node.to);
         if (indent.indexOf("\n") == -1) {
-            struct.putNewline(node.to, System.lineSeparator());
+            struct.putNewline(node.to, lineSeparator());
             logger.fine(struct.getClass(), "o6_line_break_after: at " + node.to + ".");
         }
     }
@@ -1871,7 +1935,7 @@ o9_boolean_option:
             if (breaksAroundLogicalConjunctions != Format.Breaks.BeforeAndAfter) {
                struct.putNewline(node.to, " ");
             }
-            struct.putNewline(node.from, System.lineSeparator());
+            struct.putNewline(node.from, lineSeparator());
             logger.fine(struct.getClass(), "o9_boolean_option: add line break before at " + node.from + ".");
         }
     }
@@ -1880,7 +1944,7 @@ o9_boolean_option:
             if (breaksAroundLogicalConjunctions != Format.Breaks.BeforeAndAfter) {
                struct.putNewline(node.from, " ");
             }
-            struct.putNewline(node.to, System.lineSeparator());
+            struct.putNewline(node.to, lineSeparator());
             logger.fine(struct.getClass(), "o9_boolean_option: add line break after at " + node.from + ".");
         }
     }
@@ -1897,7 +1961,7 @@ a12_add_line_break_before_then:
     var then = tuple.get("node+1");
     if (containsLineBreak(node)) {
         if (getIndent(then.from).indexOf("\n") == -1) {
-            struct.putNewline(then.from, System.lineSeparator());
+            struct.putNewline(then.from, lineSeparator());
             logger.fine(struct.getClass(), "a12_add_line_break_before_then: at " + then.from + ".");
         }
     } else {
@@ -1934,7 +1998,7 @@ o12_line_break_around_conditions:
     var node = tuple.get("node");
     if (struct.indentConditions()) {
         if (getIndent(node.from).indexOf("\n") == -1) {
-            struct.putNewline(node.from, System.lineSeparator());
+            struct.putNewline(node.from, lineSeparator());
             logger.fine(struct.getClass(), "o12_line_break_around_conditions: before at " + node.from + ".");
         }
     } else {
@@ -1945,7 +2009,7 @@ o12_line_break_around_conditions:
     }
     if (struct.indentConditions() || struct.breakAfterConditions()) {
         if (getIndent(node.to).indexOf("\n") == -1) {
-            struct.putNewline(node.to, System.lineSeparator());
+            struct.putNewline(node.to, lineSeparator());
             logger.fine(struct.getClass(), "o12_line_break_around_conditions: after at " + node.to + ".");
         }
     } else {
@@ -1971,7 +2035,7 @@ o12_line_break_before_actions:
     var node = tuple.get("node");
     if (struct.indentActions()) {
         if (getIndent(node.from).indexOf("\n") == -1) {
-            struct.putNewline(node.from, System.lineSeparator());
+            struct.putNewline(node.from, lineSeparator());
             logger.fine(struct.getClass(), "o12_line_break_before_actions: at " + node.from + ".");
         }
     } else {
@@ -2007,13 +2071,13 @@ o1_concatenation_option:
         if (struct.breaksBeforeConcat()) {
             struct.putNewline(concat.to, " "); // Before and After is not an option
             if (getIndent(concat.from).indexOf("\n") == -1) {
-                struct.putNewline(concat.from, System.lineSeparator());
+                struct.putNewline(concat.from, lineSeparator());
                 logger.fine(struct.getClass(), "o1_concatenation_option: add line break before at " + concat.from + ".");
             }
         } else if (struct.breaksAfterConcat()) {
             struct.putNewline(concat.from, " "); // Before and After is not an option
             if (getIndent(concat.to).indexOf("\n") == -1) {
-                struct.putNewline(concat.to, System.lineSeparator());
+                struct.putNewline(concat.to, lineSeparator());
                 logger.fine(struct.getClass(), "o1_concatenation_option: add line break after at " + concat.to + ".");
             }
         }
@@ -2091,7 +2155,7 @@ o10_break_on_join_keywords:
     if (breakAnsiiJoin) {
         var keyword = tuple.get("keyword");
         if (getIndent(keyword.from).indexOf("\n") == -1) {
-            struct.putNewline(keyword.from, System.lineSeparator());
+            struct.putNewline(keyword.from, lineSeparator());
             logger.fine(struct.getClass(), "o10_break_on_join_keywords: add line break at " + keyword.from + ".");
         }
     }
@@ -2113,11 +2177,11 @@ o11_break_on_subqueries:
         if (hasNewline(node.to-1, node.from+1)) {
             var rparen = tuple.get("rparen");
             if (getIndent(node.from).indexOf("\n") == -1) {
-                struct.putNewline(node.from, System.lineSeparator());
+                struct.putNewline(node.from, lineSeparator());
                 logger.fine(struct.getClass(), "o11_break_on_subqueries: before subquery at " + node.from + ".");
             }
             if (getIndent(rparen.from).indexOf("\n") == -1) {
-                struct.putNewline(rparen.from, System.lineSeparator());
+                struct.putNewline(rparen.from, lineSeparator());
                 logger.fine(struct.getClass(), "o11_break_on_subqueries: before ')' at " + rparen.from + ".");
             }
         }
@@ -2211,7 +2275,7 @@ a16_add_line_breaks_before_dml_clause:
     var node = tuple.get("node");
     if (hasNewline(parent.to-1, parent.from+1)) {
         if (getIndent(node.from).indexOf("\n") == -1) {
-            struct.putNewline(node.from, System.lineSeparator());
+            struct.putNewline(node.from, lineSeparator());
             logger.fine(struct.getClass(), "a16_add_line_breaks_before_subquery_clause: at " + node.from + ".");
         }
     }
@@ -2263,10 +2327,10 @@ a16_add_line_breaks_before:
     if (hasNewline(parent.to-1, parent.from+1)) {
         if (getIndent(node.from).indexOf("\n") == -1 && getIndent(comma.from).indexOf("\n") == -1) {
             if (struct.breaksBeforeComma()) {
-                struct.putNewline(comma.from, System.lineSeparator());
+                struct.putNewline(comma.from, lineSeparator());
                 logger.fine(struct.getClass(), "a16_add_line_breaks_before: comma at " + comma.from + ".");
             } else {
-                struct.putNewline(node.from, System.lineSeparator());
+                struct.putNewline(node.from, lineSeparator());
                 logger.fine(struct.getClass(), "a16_add_line_breaks_before: node at " + node.from + ".");
             }
         }
@@ -2298,10 +2362,14 @@ r5_commas:
     }
 
     var getIndentForComma = function(indent) {
-        var len = indent.length() - 1;
+        var len=0
+        
+        len = indent.length() - lineSeparator().length();
+
         if (spaceAfterCommas) {
            len = len - 1;
         }
+
         if (len > 0) {
             return indent.substring(0, len);
         } else {
@@ -2354,7 +2422,7 @@ r5_commas:
         if (indentNextNode.indexOf("\n") != -1) {
             // A new line was added after the comma instead of before.
             struct.putNewline(commaNode.from, getIndentForComma(indentNextNode));
-            logger.fine(struct.getClass(), "r5_commas: fix indent before comma at " + commaNode.from + ".");
+            logger.fine(struct.getClass(), "r5_commas: fix indent before comma at " + commaNode.from + "." + "with \"" + getIndentForComma(indentNextNode)+"\" for "+target.src.get(commaNode.from).content);
             var comment = getLastCommentBetweenPos(commaNode.from-1, commaNode.to);
             if (comment != null && comment.startsWith("--")) {
                 // we must not remove the newline after a single-line comment (belongs to the single line comment)
@@ -2429,7 +2497,7 @@ r2_init_left_margin:
                     // enforce uniform datatype in map; therefore convert values to Integer
                     leftMargin.put(node.from, Integer.valueOf(margin+increaseBy));
                     logger.finer(struct.getClass(), logText + ": set margin to "
-                        + (margin+increaseBy) + " spaces at " + node.from + ".");
+                        + (margin+increaseBy) + " spaces at " + node.from + " for <"+target.src.get(node.from).content+">.");
                 }
             }
         }
@@ -2635,6 +2703,18 @@ r2_subprg:
     [node) subprg_property
 ;
 
+r2_table:
+    [node) create_table[130,137)
+;
+
+r2_create_index:
+    [node) create_index_statement[64,71)
+;
+
+r2_alter_table:
+    [node) alter_table[20,39)
+;
+
 r2_increment_left_margin:
       r2_common
     | r2_flowcontrol_condition
@@ -2648,8 +2728,11 @@ r2_increment_left_margin:
     | r2_multi_table_insert
     | r2_merge_insert_clause
     | r2_subprg
+    | r2_table
+    | r2_create_index
+    | r2_alter_table
 -> {
-    addMargin(tuple.get("node"), indentSpaces, "r2_increment_left_margin");
+    addMargin(tuple.get("node"), indentSpaces, "r2_increment_left_margin"); // Increase indentation of leaf node descendants only.
 }
 
 r2_decrement_left_margin:
@@ -2672,6 +2755,7 @@ r2_decrement_left_margin:
                 | [node^) XML_attributes_clause
                 | [node^^) analytic_function
                 | [node^) external_parameter_list
+                | [node^) relational_table[4,9)
             )
     | [node) 'XMLTABLE' & [node^) xmltable
     | [node) 'JSON_TABLE' & [node^) json_table
@@ -2876,7 +2960,7 @@ r2_indent_nodes:
         if (overrideIndents(key)) {
             struct.putNewline(key, value.substring(0, value.lastIndexOf("\n")+1) + getSpaces(margin-comma));
             logger.fine(struct.getClass(), "r2_indent_nodes: set calculated margin of "
-                + (margin-comma) + " spaces at " + key + ".");
+                + (margin-comma) + " spaces at " + key + " for content <"+ target.src.get(key).content +">.");
         } else {
             if (margin-spaces-comma > 0) {
                 for (var i=0; i<margin-spaces-comma; i++) {
@@ -2884,7 +2968,7 @@ r2_indent_nodes:
                 }
                 struct.putNewline(key, value);
                 logger.fine(struct.getClass(), "r2_indent_nodes: add " + (margin-spaces-comma)
-                    + " spaces at " + key + ".");
+                    + " spaces at " + key + " for content <"+ target.src.get(key).content +">.");
             }
         }
     }
@@ -2937,7 +3021,7 @@ r7_declaration:
                 if (alignRight) {
                     var content = target.src.get(keyword.from).content;
                     var missingSpaces = parentLength - target.src.get(keyword.from).content.length();
-                    var keywordIndent = System.lineSeparator()
+                    var keywordIndent = lineSeparator()
                         + getSpaces(getColumn(parent.from) + missingSpaces)
                     struct.putNewline(keyword.from, keywordIndent);
                     logger.fine(struct.getClass(), logText + ": align <" + content + "> at " + keyword.from + ".");
@@ -3552,7 +3636,7 @@ a9_find_columns:
     }
     var aligner = tuple.get("aligner");
     if (getIndent(aligner.from).indexOf("\n") == -1) {
-        struct.putNewline(aligner.from, System.lineSeparator());
+        struct.putNewline(aligner.from, lineSeparator());
         logger.fine(struct.getClass(), "a9_find_columns: add line break at " + aligner.from + ".");
     }
     addTupleToMap(tuple, "scope", xmlTableColumns);
@@ -3615,7 +3699,7 @@ a20_find_columns:
     }
     var aligner = tuple.get("aligner");
     if (getIndent(aligner.from).indexOf("\n") == -1) {
-        struct.putNewline(aligner.from, System.lineSeparator());
+        struct.putNewline(aligner.from, lineSeparator());
         logger.fine(struct.getClass(), "a20_find_columns: add line break at " + aligner.from + ".");
     }
     addTupleToMap(tuple, "scope", jsonTableColumns);
@@ -3739,7 +3823,7 @@ a4_add_line_breaks_with_indent:
     runOnce
 -> {
     var pos = 0;
-    var indent = System.lineSeparator(); // handle first line
+    var indent = lineSeparator(); // handle first line
     for (var key=0; key<target.src.size(); key++) {
         if (pos > maxCharLineSize && target.src.get(key).content.length() > 1 && getIndent(key).indexOf("\n") == -1) {
             struct.putNewline(key, indent);
@@ -3749,7 +3833,7 @@ a4_add_line_breaks_with_indent:
             var value = getIndent(key);
             if (value.indexOf("\n") != -1) {
                 pos = getNumCharsAfterNewLine(value);
-                indent = System.lineSeparator() + getSpaces(pos);
+                indent = lineSeparator() + getSpaces(pos);
             } else {
                 pos += getNumCharsAfterNewLine(value);
             }
@@ -3910,8 +3994,8 @@ a18_indent_comment:
                 + "remove line break at " + parserPos + ".");
         } else if (!commentWithLineBreak && indent.indexOf("\n") != -1) {
             // map expects Integers; therefore convert values to Integer
-            struct.putNewline(Integer.valueOf(parserPos), indent.substring(System.lineSeparator().length));
-            substitutions.put(tokens[pos].end, tokens[lexerPos].begin, System.lineSeparator());
+            struct.putNewline(Integer.valueOf(parserPos), indent.substring(lineSeparator().length));
+            substitutions.put(tokens[pos].end, tokens[lexerPos].begin, lineSeparator());
             logger.fine(struct.getClass(), "a18_indent_comment: "
                 + "add line break at " + parserPos + ".");
         }
@@ -3996,4 +4080,122 @@ d2_log_time:
     logger.info(struct.getClass(), "d2_log_time: formatted " + target.input.length() + " chars and "
         + target.root.to + " nodes in "
         + ((endTime - startTime) / 1000) + " seconds.");
+}
+
+-- --------------------------------------------------------------------------------------------------------------------
+-- Addtional DDL section
+-- --------------------------------------------------------------------------------------------------------------------
+
+define_ddl_function:
+    runOnce
+-> {
+
+    /* Functions to recognise DDL. */
+
+    var isCreateTable = function(node) {
+        return (hasParentOfType(node.from, ['create_table'])
+        && !hasParentOfType(node.from, ['datatype'])
+        && !hasParentOfType(node.from, ['virtual_column_definition'])
+        && !hasParentOfType(node.from, ['LOB_storage_clause'])
+        );
+
+    }
+
+    var isCreateIndex = function(node) {
+        return(hasParentOfType(node.from,['table_index_clause']));
+
+    }
+
+    var isAlterTable = function(node) {
+        return(hasParentOfType(node.from,['alter_table'])
+        && !hasParentOfType(node.from,['condition']));
+    }
+
+    var isComment = function(node) {
+        return(hasParentOfType(node.from,['comment']));
+    }
+
+    var isCreateView = function(node) {
+        return(hasParentOfType(node.from,['create_view']));
+    }
+
+    var isCreateMaterializedView = function(node) {
+        return(hasParentOfType(node.from,['create_materialized_view']));
+    }
+
+    /* Return true if the node is in part of
+       a DDL statement that should be changed.
+    */
+
+    var changeDDL = function(node) {
+        return( isCreateTable(node)             ||
+                isCreateIndex(node)             ||
+                isAlterTable(node)              ||
+                isComment(node)                 ||
+                isCreateView(node)              ||
+                isCreateMaterializedView(node)
+        );
+    }
+}
+
+/* 
+DDL:-
+Move the '(' to the end of the line after the last object identifier.
+*/
+
+ddl_open_parenthesis:
+    [node) '('
+-> {
+    var node = tuple.get("node");
+
+    if ( changeDDL(node) ) {
+        var indent = getIndent(node.from);
+        var newIndent = replaceAll(replaceAll(indent, "\n", ""), "\r", "");
+
+        /*  Add a space to the end of the line, before the "("
+            if there is not one there already.
+        */
+
+        if ( !newIndent.endsWith(" ") ) {
+
+            newIndent+=" ";
+        }
+
+        struct.putNewline(node.from,newIndent);
+        logger.fine(struct.getClass(), "ddl_open_parenthesis: at " + pos + ".");
+    }
+}
+
+/*
+DDL:-
+Move the ')' on to own line and re-indent the next line.
+*/
+
+ddl_close_parenthesis:
+    [node) ')'
+-> {
+    var node = tuple.get("node");
+    var indent = getIndent(node.from);
+
+    if ( changeDDL(node) ) {
+        struct.putNewline(node.from, lineSeparator());
+        struct.putNewline(node.to, lineSeparator()+getSpaces(indentSpaces));
+        logger.fine(struct.getClass(), "ddl_close_parenthesis: at " + pos + ".");
+    }
+}
+
+/*
+DDL:-
+Move comment after 'IS' to start of new line.
+*/
+
+ddl_comment:
+    [node) 'IS'
+-> {
+    var node = tuple.get("node");
+
+    if( changeDDL(node)) {
+        struct.putNewline(node.to, lineSeparator());
+        logger.fine(struct.getClass(), "ddl_comment: at " + pos + ".");
+    }
 }
