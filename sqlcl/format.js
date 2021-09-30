@@ -90,6 +90,7 @@ var configure = function (formatter, xmlPath, arboriPath) {
         // Advanced Format: Hidden, not configurable in the GUI preferences dialog of SQLDev 20.4.1
         formatter.options.put(formatter.breaksProcArgs, false);                                             // default: false (overridden in Arbori program based on other settings)
         formatter.options.put(formatter.formatThreshold, 1);                                                // default: 1 (disables deprecated post-processing logic)
+        formatter.options.put("lineBreakString", '\n');                                                     // default newline string to linefeed
     }
     var arboriFileName = arboriPath;
     if (!"default".equals(arboriPath)) {
@@ -380,7 +381,9 @@ var processAndValidateArgs = function (args) {
                        ,".tpb"
                        ,".tps"
                        ,".trg"
+                       ,".tyb"
                        ,".typ"
+                       ,".tys"
                        ,".pck"
                        ,".pro"
                        ,".sql"
