@@ -347,6 +347,7 @@ define_global_functions:
                 return true;
             }
         }
+        return false
     }
 
     // Returns true if single-line or multi-line comments exists between two node positions.
@@ -750,13 +751,14 @@ keep_significant_whitespace_before_leaf_nodes:
             if (i-hiddenTokenCount == 0 && hiddenTokenCount == wsBefore.length) {
                 // first parser token with leading whitespace only (no other hidden tokens like comments)
                 struct.putNewline(0, "");
-                logger.fine(struct.getClass(), "keepSignificantWhitespaceBeforeLeafNodes: remove all whitespace at 0.");
+                logger.fine(struct.getClass(), "keepSignificantWhitespaceBeforeLeafNodes: remove all whitespace at 0 "
+                   +  " <"+ target.src.get(i-hiddenTokenCount).content + ">.");
             } else if (wsBefore != " ") {
                 // add collected whitespace before leaf node (actually at the position of the leaf node)
                 // add also empty strings to ensure that not a space is added between tokens
                 struct.putNewline(i-hiddenTokenCount, wsBefore);
                 logger.fine(struct.getClass(), "keepSignificantWhitespaceBeforeLeafNodes: add "
-                    + wsBefore.length + " whitespace at " + (i-hiddenTokenCount) + ".");
+                    + wsBefore.length + " whitespace at " + (i-hiddenTokenCount) + " <"+ target.src.get(i-hiddenTokenCount).content + ">.");
             }
             wsBefore = "";
         }
@@ -827,14 +829,16 @@ remove_duplicate_spaces_in_scope:
             if (nlpos == -1) {
                 if (indent.length > 1) {
                     struct.putNewline(pos, " ");
-                    logger.fine(struct.getClass(), "remove_duplicate_spaces_in_scope: single space at " + pos + ".");
+                    logger.fine(struct.getClass(), "remove_duplicate_spaces_in_scope: single space at "
+                        + pos + " <"+ target.src.get(pos).content + ">.");
                 }
             } else {
                 var spaces = indent.length - nlpos - 1;
                 if (spaces > 0) {
+                    var ins= indent.substring(0, nlpos+1);
                     struct.putNewline(pos, indent.substring(0, nlpos+1));
                     logger.fine(struct.getClass(), "remove_duplicate_spaces_in_scope: keeping line breaks only at "
-                        + pos + ".");
+                        + pos + " <"+ target.src.get(pos).content + ">.");
                 }
             }
         }
@@ -1065,7 +1069,7 @@ a13_short_nodes:
             var indent = getIndent(i);
             if (indent.indexOf("\n") != -1 || indent.length > 1) {
                 struct.putNewline(i, " ");
-                logger.fine(struct.getClass(), "a13_short_nodes: one space indent at " + i + ".");
+                logger.fine(struct.getClass(), "a13_short_nodes: one space indent at " + i + " <" + target.src.get(i).content + ">.");
             }
         }
     }
@@ -1087,7 +1091,9 @@ a13_short_nodes:
     var maxLen = maxCharLineSize / 2;
     var node = tuple.get("node");
     if (getNodeLength(node) <= maxLen) {
-        if (breaksConcat == Format.Breaks.None || !containsConcat(node)) {
+        if ( !hasCommentsBetweenPos(node.from, node.to) && 
+            !containsLineBreak(node) &&
+            ( breaksConcat == Format.Breaks.None || !containsConcat(node)) ) {
             reduceNodeIndents(node);
         }
     }
@@ -1776,12 +1782,12 @@ r3_commands:
         var indent = getIndent(node.from);
         if (indent.indexOf("\n") == -1) {
             struct.putNewline(node.from, lineSeparator());
-            logger.fine(struct.getClass(), "r3_commands: add line break at " + node.from + ".");
+            logger.fine(struct.getClass(), "r3_commands: add line break at " + node.from + " <"+ target.src.get(node.from).content + ">.");
         } else {
             // remove existing indentation; enforce conformity in these cases
             var newIndent = getLeadingNewLines(node.from);
             struct.putNewline(node.from, newIndent);
-            logger.fine(struct.getClass(), "r3_commands: remove indentation at " + node.from + ".");
+            logger.fine(struct.getClass(), "r3_commands: remove indentation at " + node.from + " <"+ target.src.get(node.from).content + ">.");
         }
     }
 }
@@ -1959,15 +1965,17 @@ a12_add_line_break_before_then:
 -> {
     var node = tuple.get("node");
     var then = tuple.get("node+1");
-    if (containsLineBreak(node)) {
-        if (getIndent(then.from).indexOf("\n") == -1) {
-            struct.putNewline(then.from, lineSeparator());
-            logger.fine(struct.getClass(), "a12_add_line_break_before_then: at " + then.from + ".");
-        }
-    } else {
-        if (getIndent(then.from) != " ") {
-            struct.putNewline(then.from, " ");
-            logger.fine(struct.getClass(), "a12_add_line_break_before_then: add space at " + then.from + ".");
+    if (!hasCommentsBetweenPos(node.from, node.to)) {
+        if (containsLineBreak(node)) {
+            if (getIndent(then.from).indexOf("\n") == -1) {
+                struct.putNewline(then.from, lineSeparator());
+                logger.fine(struct.getClass(), "a12_add_line_break_before_then: at " + then.from + " token before is <" + target.src.get(node.from).content + ">.");
+            }
+        } else {
+            if (getIndent(then.from) != " ") {
+                struct.putNewline(then.from, " ");
+                logger.fine(struct.getClass(), "a12_add_line_break_before_then: add space at " + then.from + " token before is <" +target.src.get(node.from).content +">.");
+            }
         }
     }
 }
@@ -1999,23 +2007,30 @@ o12_line_break_around_conditions:
     if (struct.indentConditions()) {
         if (getIndent(node.from).indexOf("\n") == -1) {
             struct.putNewline(node.from, lineSeparator());
-            logger.fine(struct.getClass(), "o12_line_break_around_conditions: before at " + node.from + ".");
+            logger.fine(struct.getClass(), "o12_line_break_around_conditions: before at " + node.from
+                + " <" +target.src.get(node.from).content + ">.");
         }
     } else {
+        /* if (getIndent(node.from).indexOf("\n") == -1) { */
         if (getIndent(node.from) != " ") {
             struct.putNewline(node.from, " ");
-            logger.fine(struct.getClass(), "o12_line_break_around_conditions: add space before at " + node.from + ".");
+            logger.fine(struct.getClass(), "o12_line_break_around_conditions: add space before at " + node.from
+                + " <" +target.src.get(node.from).content + ">.");
         }
     }
+
     if (struct.indentConditions() || struct.breakAfterConditions()) {
         if (getIndent(node.to).indexOf("\n") == -1) {
             struct.putNewline(node.to, lineSeparator());
-            logger.fine(struct.getClass(), "o12_line_break_around_conditions: after at " + node.to + ".");
+            logger.fine(struct.getClass(), "o12_line_break_around_conditions: after at " + node.to
+                + " <" +target.src.get(node.to).content + ">.");
         }
     } else {
+        /* if (getIndent(node.to).indexOf("\n") == -1) { */
         if (getIndent(node.to) != " ") {
             struct.putNewline(node.from, " ");
-            logger.fine(struct.getClass(), "o12_line_break_around_conditions: add space after at " + node.from + ".");
+            logger.fine(struct.getClass(), "o12_line_break_around_conditions: add space after at " + node.from
+                + " <" +target.src.get(node.from).content + ">.");
         }
     }
 }
@@ -3934,13 +3949,13 @@ a18_indent_comment:
             var content = oldIndent.substring(0, oldIndent.lastIndexOf("\n") + 1)
                 + newIndent.substring(newIndent.lastIndexOf("\n") + 1);
             substitutions.put(tokens[firstWS].begin, tokens[pos].begin, content);
-            logger.fine(struct.getClass(), "a18_indent_comment: at " + parserPos + ".");
+            logger.fine(struct.getClass(), "a18_indent_comment: at " + parserPos + " <"+target.src.get(parserPos).content+">.");
             if (tokens[pos].type == Token.COMMENT) {
                 var newComment = tokens[pos].content.replaceAll(
                     oldIndent.substring(oldIndent.lastIndexOf("\n")),
                     newIndent.substring(newIndent.lastIndexOf("\n")));
                 substitutions.put(tokens[pos].begin, tokens[pos].end, newComment);
-                logger.fine(struct.getClass(), "a18_indent_comment: all lines at " + parserPos + ".");
+                logger.fine(struct.getClass(), "a18_indent_comment: all lines at " + parserPos + " <"+target.src.get(parserPos).content+">.");
             }
         } else if (tokens[pos].type == Token.COMMENT && oldIndent.indexOf("\n") == -1 && !hasMacroSkipBetween(pos, lexerPos)) {
             var col = getCommentCol(pos);
@@ -3962,7 +3977,7 @@ a18_indent_comment:
                 newComment += content.substring(rpos);
             }
             substitutions.put(tokens[pos].begin, tokens[pos].end, newComment);
-            logger.fine(struct.getClass(), "a18_indent_comment: subsequent lines at " + parserPos + ".");
+            logger.fine(struct.getClass(), "a18_indent_comment: subsequent lines at " + parserPos + " <"+target.src.get(parserPos).content+">.");
         }
     }
 
@@ -3991,13 +4006,13 @@ a18_indent_comment:
         if (commentWithLineBreak && indent.indexOf("\n") == -1) {
             substitutions.put(tokens[pos].end, tokens[lexerPos].begin, "");
             logger.fine(struct.getClass(), "a18_indent_comment: "
-                + "remove line break at " + parserPos + ".");
+                + "remove line break at " + parserPos + " <"+target.src.get(parserPos).content+">.");
         } else if (!commentWithLineBreak && indent.indexOf("\n") != -1) {
             // map expects Integers; therefore convert values to Integer
             struct.putNewline(Integer.valueOf(parserPos), indent.substring(lineSeparator().length));
             substitutions.put(tokens[pos].end, tokens[lexerPos].begin, lineSeparator());
             logger.fine(struct.getClass(), "a18_indent_comment: "
-                + "add line break at " + parserPos + ".");
+                + "add line break at " + parserPos + " <"+target.src.get(parserPos).content+">.");
         }
     }
 
