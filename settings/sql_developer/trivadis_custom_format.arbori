@@ -4117,7 +4117,9 @@ define_ddl_function:
     }
 
     var isCreateIndex = function(node) {
-        return(hasParentOfType(node.from,['table_index_clause']));
+        return(hasParentOfType(node.from,['table_index_clause'])
+        && !hasParentOfType(node.from,['expr'])
+        );
 
     }
 
