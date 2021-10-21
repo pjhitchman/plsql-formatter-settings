@@ -103,7 +103,7 @@ include "std.arbori"
 
 -- ":indentCondtions" must be used,
 -- otherwise the Arbori program will be considered invalid and the default is used.
--- The Arbori query "dummy" never called, hence it does not matter what node is selected.
+-- The Arbori query "dummy" is never called, hence it does not matter what node is selected.
 -- However, I chose to use "identifier" to avoid an Arbori warning.
 dummy:
     :indentConditions & [node) identifier
@@ -151,7 +151,7 @@ startCustomFormat:
 -- Callback function to ensure numeric literals are formatted correctly (without whitespaces)
 dontFormatNode:
       [node) numeric_literal
-    | [node) path             -- expected in in SQL*Plus, SQLcl commands only
+    | [node) path             -- expected in SQL*Plus, SQLcl commands only
 ->
 ;
 
@@ -1034,6 +1034,7 @@ a13_nodes:
     | [node) external_parm_list_entry
     | [node) excptn_handler
     | [node) pragma
+    | [node) iterator_control_list
 ;
 
 a13_calls_with_assoc_args:
@@ -1048,8 +1049,15 @@ a13_records:
     & node < child
 ;
 
+a13_iterator_control_list_subquery:
+      [node) iterator_control_list
+    & [node^) iterator
+    & [subquery) subquery
+    & node < subquery
+;
+
 a13_short_nodes:
-    (a13_nodes - a13_calls_with_assoc_args) - a13_records
+    ((a13_nodes - a13_calls_with_assoc_args) - a13_records) - a13_iterator_control_list_subquery
 -> {
     var getNodeLength = function(node) {
         var len = 0;
@@ -1310,6 +1318,16 @@ a7_for_loop_identifier:
     & [node^) iterator
 ;
 
+a7_iterand_mutable_opt:
+      [node) mutable_opt
+    & [node^) iterand_decl
+;
+
+a7_iterand_type:
+      [node) constrained_type
+    & [node^) iterand_decl
+;
+
 a7_assignment:
       [node) ':'
     & [node+1) '='
@@ -1332,6 +1350,22 @@ a7_end_label:
 a7_type_definition:
       [node) 'IS'
     & [node^) ty_d
+;
+
+a7_iterator_control_list_all:
+      [node) iterator_control_list
+    & [node^) iterator
+;
+
+a7_iterator_control_list_subquery:
+      [node) iterator_control_list
+    & [node^) iterator
+    & [subquery) subquery
+    & node < subquery
+;
+
+a7_iterator_control_list:
+    a7_iterator_control_list_all - a7_iterator_control_list_subquery
 ;
 
 a7_when_cond:
@@ -1358,6 +1392,9 @@ a7_one_space_before:
     | a7_insert_into
     | a7_parameter_parts
     | a7_for_loop_identifier
+    | a7_iterand_mutable_opt
+    | a7_iterand_type
+    | a7_iterator_control_list
     | a7_assignment
     | a7_accessible_by
     | a7_end_label
@@ -1757,6 +1794,7 @@ r3_plsql_keywords:
           & ![node^) merge_insert_clause
           & ![node^) merge_update_clause
           & ![node^) continue_stmt
+          & ![node^^) iterator_control
     | [node) 'BEGIN'
     | [node) 'END'
     | [node) 'ELSIF'
@@ -2210,7 +2248,7 @@ o11_break_on_subqueries:
 a16_select:
       [parent) subquery
     & (
-          [node) 'FROM'
+          [node) 'FROM' & ![node^) expr
         | [node) 'WHERE'
         | [node) 'CONNECT'
         | [node) 'START'
@@ -3017,7 +3055,7 @@ r2_fix_indent_for_subquery_in_paren:
 -- Right align keywords with primary keyword of a SQL command.
 -- For the select statement the primary keyword is "select", even if it starts with the "with" keyword.
 -- Only one keyword is right aligned. E.g. "group" without the "by".
--- The right margin is reduced if the keyword is longer than the primary keyword (e.g. "distinct" in for select statement).
+-- The right margin is reduced if the keyword is longer than the primary keyword (e.g. "distinct" in select statement).
 -- This behavior is consistent with the reduction of the right margin for leading commas.
 -- Right alignment for longer keywords requires a the left margin that is large enough.
 
@@ -3829,7 +3867,7 @@ o5_align_aliases:
 -- This piece of code addresses this issue. It adds a new line with the indentation of the current line.
 -- No additional indentation is added to make this work for long argument lists as well
 -- (indentation might not be reduced on subsequent formatter calls).
--- It iss important to note that the lines may be a bit longer than the configured max char line width.
+-- It is important to note that the lines may be a bit longer than the configured max char line width.
 -- That's expected and matches the SQLDev logic. It ensures also that corner cases can be handled by
 -- this code (e.g. string tokens > max char line width).
 -- Due to this simple algorithm, it is expected that a subsequent formatter call will produce a different result.
@@ -3993,10 +4031,10 @@ a18_indent_comment:
         return false;
     }
 
-    // Fixes the issue in SQLDev 20.4.1 and SQLcl 21.1.0 where the indent after a multiline comment cannot be changed.
-    // See https(colon)//community.oracle.com/tech/developers/discussion/4482624/sqldev-20-4-1-formatter-issues-after-multi-line-comment-bug
-    // It is expected that this function can be removed when this bug is fixed.
-    // Still required in SQLDev 21.2.0 and SQLcl 21.2.0 (otherwise some R5 test cases fail).
+    //-- Fixes the issue in SQLDev 20.4.1 and SQLcl 21.1.0 where the indent after a multiline comment cannot be changed.
+    //-- See https://community.oracle.com/tech/developers/discussion/4482624/sqldev-20-4-1-formatter-issues-after-multi-line-comment-bug
+    //-- It is expected that this function can be removed when this bug is fixed.
+    //-- Still required in SQLDev 21.2.1 and SQLcl 21.3.0 (otherwise two R5_commas test cases fail).
     var fixIndentAfterMultiLineComment = function(pos) {
         var parserPos = pos - hiddenTokenCount + 1;
         var indent = getIndent(parserPos);
